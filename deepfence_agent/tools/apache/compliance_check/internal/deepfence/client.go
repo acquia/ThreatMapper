@@ -66,7 +66,7 @@ func (c *Client) SendScanStatustoConsole(scanMsg string, status string, totalChe
 		return err
 	}
 	postReader := bytes.NewReader(complianceScanLog)
-	ingestScanStatusAPI := fmt.Sprintf("https://" + c.mgmtConsoleUrl + "/df-api/ingest?doc_type=" + util.ComplianceScanLogsIndexName)
+	ingestScanStatusAPI := fmt.Sprintf("%s://%s/df-api/ingest?doc_type=%s", getProtocol(), c.mgmtConsoleUrl, util.ComplianceScanLogsIndexName)
 	_, err = c.HttpRequest(MethodPost, ingestScanStatusAPI, postReader, nil)
 	return err
 }
@@ -84,8 +84,9 @@ func (c *Client) getApiAccessToken() string {
 }
 
 func (c *Client) GetApiAccessToken() (string, error) {
+	requestURL := fmt.Sprintf("%s://%s/deepfence/v1.5/users/auth", getProtocol(), c.mgmtConsoleUrl)
 	resp, err := c.HttpRequest(MethodPost,
-		"https://"+c.mgmtConsoleUrl+"/deepfence/v1.5/users/auth",
+		requestURL,
 		bytes.NewReader([]byte(`{"api_key":"`+c.config.DeepfenceKey+`"}`)),
 		nil)
 	if err != nil {
@@ -108,7 +109,7 @@ func (c *Client) SendComplianceResultToConsole(complianceScan []util.ComplianceS
 		return err
 	}
 	postReader := bytes.NewReader(docBytes)
-	ingestScanStatusAPI := fmt.Sprintf("https://" + c.mgmtConsoleUrl + "/df-api/ingest?doc_type=" + util.ComplianceScanIndexName)
+	ingestScanStatusAPI := fmt.Sprintf("%s://%s/df-api/ingest?doc_type=%s", getProtocol(), c.mgmtConsoleUrl, util.ComplianceScanIndexName)
 	_, err = c.HttpRequest("POST", ingestScanStatusAPI, postReader, nil)
 	if err != nil {
 		return err
