@@ -16,17 +16,21 @@ const (
 	maxIdleConnsPerHost = 1024
 )
 
+
 func buildHttpClient() *http.Client {
-	// Set up our own certificate pool
-	tlsConfig := &tls.Config{RootCAs: x509.NewCertPool(), InsecureSkipVerify: true}
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: maxIdleConnsPerHost,
 		DialContext: (&net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		TLSHandshakeTimeout: 30 * time.Second,
-		TLSClientConfig:     tlsConfig}
+	}
+	if !UseHttp() {
+		// Set up our own certificate pool
+		tlsConfig := &tls.Config{RootCAs: x509.NewCertPool(), InsecureSkipVerify: true}
+		transport.TLSClientConfig = tlsConfig
+		transport.TLSHandshakeTimeout = 30 * time.Second
+	}
 	client := &http.Client{Transport: transport}
 	return client
 }
@@ -54,6 +58,25 @@ func authenticateAgentWithConsole(httpClient *http.Client, scopeApiUrl, authKey 
 	return false, nil
 }
 
+const UseHttpENV = "USE_HTTP"
+
+func GetProtocol() string {
+	if UseHttp() {
+		return "http"
+	} else {
+		return "https"
+	}
+}
+
+func UseHttp() bool {
+	useInsecure := os.Getenv(UseHttpENV)
+	if useInsecure != "" {
+		return false
+	} else {
+		return true
+	}
+}
+
 func main() {
 	authKey := os.Getenv("DEEPFENCE_KEY")
 	mgmtConsoleUrl := os.Getenv("MGMT_CONSOLE_URL")
@@ -61,7 +84,7 @@ func main() {
 	if consolePort != "" && consolePort != "443" {
 		mgmtConsoleUrl += ":" + consolePort
 	}
-	scopeApiUrl := fmt.Sprintf("https://%s/topology-api", mgmtConsoleUrl)
+	scopeApiUrl := fmt.Sprintf("%s://%s/topology-api", GetProtocol(), mgmtConsoleUrl)
 	var httpClient *http.Client
 	for {
 		if httpClient == nil {

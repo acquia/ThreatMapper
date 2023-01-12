@@ -29,6 +29,7 @@ const (
 	defaultScanConcurrency  = 5
 	secretScanIndexName     = "secret-scan"
 	secretScanLogsIndexName = "secret-scan-logs"
+    UseHttpENV = "USE_HTTP"
 )
 
 var certPath = "/etc/filebeat/filebeat.crt"
@@ -218,6 +219,23 @@ func getCurrentTime() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05.000") + "Z"
 }
 
+func getProtocol() string {
+	if useHttp() {
+		return "http"
+	} else {
+		return "https"
+	}
+}
+
+func useHttp() bool {
+	useInsecure := os.Getenv(UseHttpENV)
+	if useInsecure != "" {
+		return false
+	} else {
+		return true
+	}
+}
+
 func ingestScanData(secretScanMsg string, index string) error {
 	secretScanMsg = strings.Replace(secretScanMsg, "\n", " ", -1)
 	postReader := bytes.NewReader([]byte(secretScanMsg))
@@ -228,6 +246,7 @@ func ingestScanData(secretScanMsg string, index string) error {
 		return err
 	}
 	for {
+
 		httpReq, err := http.NewRequest("POST", "https://"+mgmtConsoleUrl+"/df-api/ingest?doc_type="+index, postReader)
 		if err != nil {
 			return err
@@ -265,31 +284,34 @@ func newSecretScannerClient() (pb.SecretScannerClient, error) {
 }
 
 func buildClient() (*http.Client, error) {
-	// Set up our own certificate pool
-	tlsConfig := &tls.Config{RootCAs: x509.NewCertPool(), InsecureSkipVerify: true}
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig:     tlsConfig,
-			DisableKeepAlives:   false,
-			MaxIdleConnsPerHost: 1024,
-			DialContext: (&net.Dialer{
-				Timeout:   15 * time.Minute,
-				KeepAlive: 15 * time.Minute,
-			}).DialContext,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 5 * time.Minute,
-		},
-		Timeout: 15 * time.Minute,
+	transport := &http.Transport{
+		DisableKeepAlives:   false,
+		MaxIdleConnsPerHost: 1024,
+		DialContext: (&net.Dialer{
+			Timeout:   15 * time.Minute,
+			KeepAlive: 15 * time.Minute,
+		}).DialContext,
+		ResponseHeaderTimeout: 5 * time.Minute,
 	}
 
-	// Load our trusted certificate path
-	pemData, err := ioutil.ReadFile(certPath)
-	if err != nil {
-		return nil, err
+	if !useHttp() {
+		// Set up our own certificate pool
+		tlsConfig := &tls.Config{RootCAs: x509.NewCertPool(), InsecureSkipVerify: true}
+		transport.TLSClientConfig = tlsConfig
+		transport.TLSHandshakeTimeout = 10 * time.Second
+		// Load our trusted certificate path
+		pemData, err := ioutil.ReadFile(certPath)
+		if err != nil {
+			return nil, err
+		}
+		ok := tlsConfig.RootCAs.AppendCertsFromPEM(pemData)
+		if !ok {
+			return nil, errors.New("unable to append certificates to PEM")
+		}
 	}
-	ok := tlsConfig.RootCAs.AppendCertsFromPEM(pemData)
-	if !ok {
-		return nil, errors.New("unable to append certificates to PEM")
+	client := &http.Client{
+		Transport: transport,
+		Timeout: 15 * time.Minute,
 	}
 
 	return client, nil
